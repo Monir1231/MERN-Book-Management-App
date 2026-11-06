@@ -6,11 +6,12 @@ require('dotenv').config()
 const app = express()
 const port = 3000
 const cors = require('cors')
-const { MongoClient, ServerApiVersion } = require('mongodb');
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
+const { title } = require('node:process');
 
 // middleware 
 app.use(express.json())
-app.use(cors)
+app.use(cors())
 
 // mongodb start 
 
@@ -34,14 +35,102 @@ async function run() {
     const db =client.db("book-management-system");
     const bookCollection = db.collection("books");
 
-    // create a book 
 
+
+    // create a new book 
   app.post('/books', async(req, res) => {
   const bookdata = req.body;
- console.log(bookdata)
+  try {
+    const book = await bookCollection.insertOne(bookdata)
+    res.status(201).json(book)
+  } catch (error) {
+    res.status(404).json({error: error.message})
+  }
+
 })
 
+// get data 
+app.get("/books", async (req,res)=>{
+  const {page,limit,genre,minYear,maxYear,author,minPrice,maxPrice,sortBy,order,search} = req.query;
+  try {
+    const currentPage = Math.max(1,parseInt(page) || 1)
+    const perPage = parseInt(limit) || 10;
+    const skip = (currentPage - 1) * perPage
 
+    const filter = {}
+    if(search){
+      filter.$or = [
+        {title: {$regex:search , $options: "i"}},
+         {description: {$regex:search , $options: "i"}}
+      ]
+    }
+
+    if(genre) filter.genre = genre;
+
+    if(minYear || maxYear){
+      filter.publishedYear = {
+        ...(minYear && {$gte:parseInt(minYear)}),
+        ...(maxYear && {$lte:parseInt(maxYear)})
+
+      }
+    }
+
+    if(author) filter.author = author;
+
+    if(minPrice || maxPrice){
+      filter.price = {
+        ...(minPrice && {$gte: parseFloat(minPrice)}),
+        ...(maxPrice && {$gte: parseFloat(maxPrice)})
+      }
+    }
+     
+    const sortoptions = {[sortBy || 'title']: order === 'desc' ? -1 : 1} 
+    
+    const [books,totalBooks] = await Promise.all([bookCollection.find(filter).sort(sortoptions).skip(skip).limit(perPage).toArray(),
+      bookCollection.countDocuments(filter)])
+ 
+    // const books = await bookCollection.find(filter).sort(sortoptions).skip(skip).limit(perPage).toArray()
+    res.status(201).json({books,totalBooks,currentPage,totalpages:Math.ceil(totalBooks/perPage)})
+  } catch (error) {
+      res.status(404).json({error: error.message})
+  }
+})
+
+// get book by id 
+app.get("/books/:id", async (req,res)=>{
+
+  const bookId = req.params.id ;
+
+  try {
+  const book = await bookCollection.findOne({_id: new ObjectId(bookId)})
+  if(!book) return res.status(404).json({message:"book not found"})
+    res.json(book)
+  } catch (error) {
+     res.status(404).json({error: error.message})
+  }
+
+
+})
+
+// update book 
+app.put("/books/:id",async (req,res)=>{
+  try {
+    const updateBook = await bookCollection.updateOne({_id: new ObjectId(req.params.id)},{$set: req.body})
+      res.json(updateBook)
+  } catch (error) {
+     res.status(404).json({error: error.message})
+  }
+})
+
+//  delete  book 
+app.delete("/books/:id",async (req,res)=>{
+  try {
+    const deleteBook = await bookCollection.deleteOne({_id: new ObjectId(req.params.id)})
+      res.json({message:"book delete succful",deleteBook})
+  } catch (error) {
+     res.status(404).json({error: error.message})
+  }
+})
 
 
 
